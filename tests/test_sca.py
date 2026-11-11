@@ -127,6 +127,21 @@ def test_jira_network_error_hides_details():
     assert 'secret-test-token' not in str(error.value)
 
 
+def test_jira_error_details_are_useful_and_redacted():
+    session = Mock()
+    session.request.return_value = response({
+        'errorMessages': ['Invalid project; secret-test-token'],
+        'errors': {'issuetype': 'Specify a valid issue type'},
+    }, 400)
+    with pytest.raises(jira.JiraError) as error:
+        jira.sync(summary(), jira_env(), session)
+    message = str(error.value)
+    assert 'search/jql' in message
+    assert 'Invalid project' in message
+    assert 'Specify a valid issue type' in message
+    assert 'secret-test-token' not in message
+
+
 @pytest.mark.parametrize('codes,expected', [([0, 0], 0), ([1, 1], 0), ([2, 0], 2), ([3, 1], 2)])
 def test_scan_return_codes_and_all_manifests(tmp_path, monkeypatch, codes, expected):
     monkeypatch.setattr(run_sca, 'ROOT', tmp_path)

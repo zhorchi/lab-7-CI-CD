@@ -1,5 +1,6 @@
 """Synchronize an aggregate SCA Task with Jira Cloud REST API v3."""
 import hashlib
+import base64
 import json
 import os
 from pathlib import Path
@@ -20,7 +21,24 @@ def request(session, method, url, **kwargs):
     except requests.RequestException:
         raise JiraError('Jira network request failed (details hidden to protect credentials).') from None
     if not 200 <= response.status_code < 300:
-        raise JiraError(f'Jira HTTP {response.status_code}: {method} request rejected.')
+        details = {}
+        try:
+            body = response.json()
+            if isinstance(body, dict):
+                details = {k: body[k] for k in ('errorMessages', 'errors') if k in body}
+        except ValueError:
+            pass
+        message = json.dumps(details, ensure_ascii=True)
+        auth = session.auth
+        if isinstance(auth, tuple) and len(auth) == 2:
+            sensitive = [*auth, base64.b64encode(f'{auth[0]}:{auth[1]}'.encode()).decode()]
+            for value in sensitive:
+                if value:
+                    message = message.replace(value, '[REDACTED]')
+                    message = message.replace(json.dumps(value)[1:-1], '[REDACTED]')
+        endpoint = 'search/jql' if url.endswith('/search/jql') else 'issue'
+        raise JiraError(f'Jira HTTP {response.status_code}: {method} {endpoint} rejected. '
+                        f'API errors: {message[:2000]}')
     if response.status_code == 204:
         return {}
     try:
