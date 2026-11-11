@@ -98,7 +98,8 @@ def sync(summary, env, session):
         request(session, 'PUT', api + '/issue/' + key, json={'fields': fields})
         print('Existing Jira SCA Task updated.')
     else:
-        fields.update({'project': {'key': project}, 'issuetype': {'name': 'Task'}, 'labels': [label]})
+        issue_type = env.get('JIRA_ISSUE_TYPE', 'Task').strip() or 'Task'
+        fields.update({'project': {'key': project}, 'issuetype': {'name': issue_type}, 'labels': [label]})
         created = request(session, 'POST', api + '/issue', json={'fields': fields})
         if not created.get('key'):
             raise ValueError('Jira did not return a created issue key.')

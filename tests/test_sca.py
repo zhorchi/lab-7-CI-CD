@@ -110,6 +110,15 @@ def test_jira_missing_secrets_and_low():
     session.request.assert_not_called()
 
 
+def test_jira_localized_issue_type():
+    session = Mock()
+    session.request.side_effect = [response({'issues': []}), response({'key': 'LAB-1'}, 201)]
+    env = jira_env()
+    env['JIRA_ISSUE_TYPE'] = 'Задача'
+    jira.sync(summary(), env, session)
+    assert session.request.call_args.kwargs['json']['fields']['issuetype'] == {'name': 'Задача'}
+
+
 @pytest.mark.parametrize('status', [301, 400, 401, 403, 429, 500])
 def test_jira_http_errors_hide_response(status):
     session = Mock()
