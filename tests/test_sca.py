@@ -65,6 +65,30 @@ def test_optional_metadata_not_invented():
     assert result['fixed_in'] == result['upgrade_path'] == []
 
 
+def test_manifest_discovery(tmp_path):
+    (tmp_path / 'requirements.txt').touch()
+    assert run_sca.manifests(tmp_path) == [tmp_path / 'requirements.txt']
+    (tmp_path / 'demo').mkdir()
+    (tmp_path / 'demo/requirements.txt').touch()
+    assert run_sca.manifests(tmp_path) == [tmp_path / 'requirements.txt', tmp_path / 'demo/requirements.txt']
+
+
+@pytest.mark.parametrize('level', ['high', 'critical'])
+def test_gate_combines_project_and_demo(tmp_path, level):
+    reports = tmp_path / 'reports'
+    reports.mkdir()
+    (tmp_path / 'demo').mkdir()
+    (tmp_path / 'demo/requirements.txt').touch()
+    for filename, severity in [('snyk-requirements.json', 'medium'), ('snyk-demo.json', level)]:
+        (reports / filename).write_text(json.dumps({'ok': False, 'vulnerabilities': [vulnerability(severity)]}))
+    assert gate.main(tmp_path) == 1
+    result = json.loads((reports / 'sca-summary.json').read_text())
+    assert result['counts']['medium'] == 1 and result['counts'][level] == 1
+    assert result['has_actionable'] is True
+    assert {v['manifest'] for v in result['vulnerabilities']} == {'requirements.txt', 'demo/requirements.txt'}
+    assert 'demo/requirements.txt' in (reports / 'sca-summary.md').read_text()
+
+
 def jira_env():
     return {'JIRA_BASE_URL': 'https://example.atlassian.net', 'JIRA_USER_EMAIL': 'test@example.test',
             'JIRA_API_TOKEN': 'secret-test-token', 'JIRA_PROJECT_KEY': 'LAB',
@@ -82,10 +106,11 @@ def response(data, status=200):
     return result
 
 
-def test_jira_create_adf_and_deduplicate():
+@pytest.mark.parametrize('level', ['medium', 'high', 'critical'])
+def test_jira_create_adf_and_deduplicate(level):
     session = Mock()
     session.request.side_effect = [response({'issues': []}), response({'key': 'LAB-1'}, 201)]
-    jira.sync(summary(), jira_env(), session)
+    jira.sync(summary(level), jira_env(), session)
     search, create = session.request.call_args_list
     assert search.args[1].endswith('/search/jql')
     fields = create.kwargs['json']['fields']
@@ -97,7 +122,7 @@ def test_jira_create_adf_and_deduplicate():
     assert 'secret-test-token' not in json.dumps(fields)
     session.request.reset_mock()
     session.request.side_effect = [response({'issues': [{'key': 'LAB-1'}]}), response({}, 204)]
-    jira.sync(summary(), jira_env(), session)
+    jira.sync(summary(level), jira_env(), session)
     assert session.request.call_args.args == ('PUT', 'https://example.atlassian.net/rest/api/3/issue/LAB-1')
     assert session.request.call_args_list[0].kwargs['json']['jql'] == search.kwargs['json']['jql']
 
