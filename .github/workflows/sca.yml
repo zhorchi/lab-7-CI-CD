@@ -67,7 +67,7 @@ jobs:
           python -m cyclonedx_py environment .sca-venv/bin/python --output-format JSON --output-file reports/sbom.cdx.json
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sca-reports
           path: reports/
