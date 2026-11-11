@@ -35,7 +35,7 @@ if (Test-Path demo/requirements.txt) {
     .\.sca-venv\Scripts\python.exe -m pip install -r demo/requirements.txt
 }
 .\.venv\Scripts\python.exe -m pytest
-# Задайте SNYK_TOKEN в окружении, не записывайте токен в репозиторий.
+
 .\.venv\Scripts\python.exe scripts/run_sca.py
 .\.venv\Scripts\python.exe scripts/check_sca_gate.py
 .\.venv\Scripts\python.exe -m cyclonedx_py environment .sca-venv/Scripts/python.exe --output-format JSON --output-file reports/sbom.cdx.json

@@ -1,4 +1,3 @@
-# No vulnerabilities are suppressed by default.
 version: v1.25.0
 ignore: {}
 patch: {}
