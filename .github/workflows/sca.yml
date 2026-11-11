@@ -24,7 +24,7 @@ jobs:
       has_actionable: ${{ steps.gate.outputs.has_actionable }}
       report_generated: ${{ steps.gate.outputs.report_generated }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-python@v6
@@ -87,7 +87,7 @@ jobs:
     timeout-minutes: 10
     steps:
       # PR contents never run with Jira credentials. Dependencies also come from main.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'pull_request' && 'refs/heads/main' || github.sha }}
           persist-credentials: false
