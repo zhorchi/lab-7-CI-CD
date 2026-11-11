@@ -1,0 +1,15 @@
+.venv/
+.sca-venv/
+reports/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+coverage.xml
+coverage.json
+htmlcov/
+bandit-report.json
+bandit-validation.json
+sast-targets.txt
+security-summary.md

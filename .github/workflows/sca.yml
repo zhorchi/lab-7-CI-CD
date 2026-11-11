@@ -1,0 +1,109 @@
+name: SCA Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sca-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      has_actionable: ${{ steps.gate.outputs.has_actionable }}
+      report_generated: ${{ steps.gate.outputs.report_generated }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+      - name: Install test and SCA tools
+        run: python -m pip install -r requirements.txt -r requirements-sca.txt
+      - name: Install Snyk Open Source CLI
+        run: npm install -g snyk
+      - name: Prepare isolated dependency environment
+        run: |
+          python -m venv .sca-venv
+          .sca-venv/bin/python -m pip install -r requirements.txt
+          if [ -f demo/requirements.txt ]; then
+            .sca-venv/bin/python -m pip install -r demo/requirements.txt
+          fi
+      - name: Run application and SCA tests
+        run: python -m pytest
+      - name: Explain fork limitation
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: echo 'Snyk and Jira skipped for external fork PR; no secrets are provided.'
+      - name: Scan dependencies
+        id: snyk
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: python scripts/run_sca.py
+      - name: Evaluate Quality Gate
+        id: gate
+        if: success() && steps.snyk.outcome == 'success'
+        continue-on-error: true
+        run: python scripts/check_sca_gate.py
+      - name: Generate CycloneDX SBOM
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p reports
+          python -m cyclonedx_py environment .sca-venv/bin/python --output-format JSON --output-file reports/sbom.cdx.json
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-reports
+          path: reports/
+          if-no-files-found: warn
+      - name: Enforce Quality Gate result
+        if: ${{ !cancelled() && steps.gate.outcome == 'failure' }}
+        run: exit 1
+
+  jira:
+    needs: scan
+    if: >-
+      always() && !cancelled() &&
+      needs.scan.outputs.report_generated == 'true' &&
+      needs.scan.outputs.has_actionable == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # PR contents never run with Jira credentials. Dependencies also come from main.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'pull_request' && 'refs/heads/main' || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-sca.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: sca-reports
+          path: reports/
+      - name: Synchronize Jira Task
+        env:
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          SCA_SCOPE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+        run: python scripts/jira_sync.py
